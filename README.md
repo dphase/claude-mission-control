@@ -2,6 +2,8 @@
 
 A sidebar for Claude Code. It shows what the session is doing while you work: context usage, git state, the files Claude touched, the todo list, running subagents, and a short recap of the conversation.
 
+![Mission Control sidebar next to a Claude Code session](screenshot.png)
+
 ## Install
 
 In a Claude Code terminal session:
