@@ -61,6 +61,7 @@ const C = {
   green: '#9ece6a',
   red: '#f7768e',
   yellow: '#e0af68',
+  spin: '#e0af69',
   orange: '#ff9e64',
   cyan: '#7dcfff',
   blue: '#7aa2f7',
@@ -596,7 +597,7 @@ export const register: Register = on => {
     const title = (
       <Box flexDirection="column" marginBottom={1} key="title">
         <Text bold color={C.skyLight} wrap="truncate-end">
-          {live.isBusy ? spin : '◆'}
+          {live.isBusy ? <Text color={C.spin}>{spin}</Text> : '◆'}
           {'  '}
           {meta.title || 'session'}
         </Text>
@@ -746,7 +747,7 @@ export const register: Register = on => {
                       const isDone = task.status === 'completed'
                       const isActive = task.status === 'in_progress'
                       const mark = isDone ? '[✓]' : isActive ? `[${spin}]` : isBlocked ? '[⊘]' : '[ ]'
-                      const markColor = isDone ? C.green : isActive ? C.yellow : isBlocked ? C.red : C.faint
+                      const markColor = isDone ? C.green : isActive ? C.spin : isBlocked ? C.red : C.faint
                       const textColor = isDone ? C.muted : isActive ? C.yellow : isBlocked ? C.muted : C.soft
                       return (
                         <Box flexDirection="row">
@@ -793,7 +794,7 @@ export const register: Register = on => {
                     return (
                       <Box flexDirection="column" marginBottom={1} key={`agent-${agent.toolUseId}`}>
                         <Text color={C.fg} wrap="truncate-end">
-                          <Text color={C.sky}>{spin}</Text>
+                          <Text color={C.spin}>{spin}</Text>
                           {'  '}
                           {agent.description}
                         </Text>
@@ -836,7 +837,7 @@ export const register: Register = on => {
           )
 
     // --- recap: always shown ---
-    const recapAge = recap.isThinking ? `${spin}  thinking` : recap.at ? ago(now - recap.at) : ''
+    const recapAge = recap.isThinking ? 'thinking' : recap.at ? ago(now - recap.at) : ''
     const recapBlock = section(
       'recap',
       <Box flexDirection="column">
@@ -849,7 +850,10 @@ export const register: Register = on => {
             </Text>
           </Button>
           <Box flexDirection="row" gap={2}>
-            <Text color={recap.isThinking ? C.sky : C.muted}>{recapAge}</Text>
+            <Text color={recap.isThinking ? C.sky : C.muted}>
+              {recap.isThinking ? <Text color={C.spin}>{`${spin}  `}</Text> : null}
+              {recapAge}
+            </Text>
             <Button key="recap-refresh" plain onPress={() => void refreshRecap($)}>
               <Text color={C.skyDeep}>↻</Text>
             </Button>
