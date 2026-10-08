@@ -1,0 +1,6 @@
+{
+  "name": "claude-mission-control",
+  "owner": { "name": "dphase" },
+  "description": "Mission Control, a live sidebar for Claude Code",
+  "plugins": [{ "name": "mission-control", "source": "./" }]
+}

@@ -2,5 +2,6 @@
   "name": "mission-control",
   "version": "0.1.0",
   "description": "A live sidebar: project, context and quota, tasks, subagents with ETA, and a running recap",
+  "author": { "name": "dphase" },
   "types": "./types/index.d.ts"
 }
