@@ -14,6 +14,12 @@ In a Claude Code terminal session:
 
 Answer `y` to add the marketplace, then press Enter to install at the user scope. The sidebar opens on its own once the terminal is wide enough.
 
+To remove it:
+
+```
+/plugin uninstall mission-control
+```
+
 ## What's in it
 
 - **Header**: session title, model, and how long the current turn has been running.
