@@ -895,10 +895,12 @@ export const register: Register = on => {
     // --- footer ---
     const footer = (
       <Box flexDirection="column" key="footer">
-        <Text wrap="truncate-start">
-          <Text color={C.muted}>{tildify(meta.cwd)}</Text>
-          {git.branch ? <Text color={C.cyan}>:{git.branch}</Text> : ''}
-        </Text>
+        <Box flexDirection="row" justifyContent="flex-end">
+          <Text wrap="truncate-start">
+            <Text color={C.muted}>{tildify(meta.cwd)}</Text>
+            {git.branch ? <Text color={C.cyan}>:{git.branch}</Text> : ''}
+          </Text>
+        </Box>
         <Box flexDirection="row" justifyContent="flex-end">
           <Text color={C.muted}>{meta.version.split('-')[0]}</Text>
         </Box>
