@@ -29,8 +29,11 @@ To remove it:
 - **Todo**: Claude's task list, with the active task highlighted.
 - **Agents**: running subagents with their type, step count, current tool, and an ETA learned from past runs of the same type.
 - **Recap**: what you asked, what's done, and what's next. Haiku writes it after each turn from the last few messages.
+- **Artifacts**: pages Claude published this session, newest first. Click one to open it in your browser.
 
 Click a section header to fold it.
+
+The Artifacts icon is a Nerd Font glyph. Use a Nerd Font, or a terminal that bundles the symbols (Ghostty does); otherwise it draws as an empty box.
 
 ## Commands
 
