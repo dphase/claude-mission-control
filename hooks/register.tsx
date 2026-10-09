@@ -615,12 +615,19 @@ export const register: Register = on => {
       )
     }
 
+    // A label that truncates on the left, a figure pinned to the right edge that never wraps.
     const Row = (props: { left: string; right?: string; leftColor?: string; rightColor?: string }) => (
-      <Box flexDirection="row" justifyContent="space-between">
-        <Text color={props.leftColor ?? C.soft} wrap="truncate-end">
-          {props.left}
-        </Text>
-        <Text color={props.rightColor ?? C.muted}>{props.right ?? ''}</Text>
+      <Box flexDirection="row">
+        <Box flexGrow={1} flexShrink={1} overflow="hidden">
+          <Text color={props.leftColor ?? C.soft} wrap="truncate-end">
+            {props.left}
+          </Text>
+        </Box>
+        {props.right ? (
+          <Box flexShrink={0} marginLeft={1}>
+            <Text color={props.rightColor ?? C.muted}>{props.right}</Text>
+          </Box>
+        ) : null}
       </Box>
     )
 
