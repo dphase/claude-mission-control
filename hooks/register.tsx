@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { AgentRun, FileEdit, Git, Live, Meta, Recap, Task, Usage } from '../types'
+import type { AgentRun, FileEdit, Git, Live, Meta, PublishedArtifact, Recap, Task, Usage } from '../types'
 
 const PANE = 'mission-control'
 const TITLE = 'Mission Control'
@@ -43,6 +43,7 @@ const gitAtom = atom({ plugin: 'mission-control', key: 'git' } as const, {
   changes: [],
 } as Git)
 const editsAtom = atom({ plugin: 'mission-control', key: 'edits' } as const, [] as FileEdit[])
+const artifactsAtom = atom({ plugin: 'mission-control', key: 'artifacts' } as const, [] as PublishedArtifact[])
 
 // Tokyo Night on a near-black ground: sky blue for structure, purple for the meters.
 const C = {
@@ -62,6 +63,9 @@ const C = {
   red: '#f7768e',
   yellow: '#e0af68',
   spin: '#e0af69',
+  version: '#9dcf6a',
+  artifact: '#d97857',
+  artifactName: '#bec1bf',
   orange: '#ff9e64',
   cyan: '#7dcfff',
   blue: '#7aa2f7',
@@ -257,6 +261,22 @@ async function rememberDuration($: EngineInterface, type: string, ms: number) {
 
 let isRecapRunning = false
 let isRecapQueued = false
+
+const ARTIFACT_URL = /https:\/\/claude\.ai\/(?:code\/)?artifact\/[\w-]+/
+
+// The page's <title>, else its file name without the extension.
+async function pageTitle($: EngineInterface, filePath: string) {
+  const name = filePath.split('/').pop()?.replace(/\.[^.]+$/, '')
+  const path = filePath.startsWith('/') ? filePath : `${await $.session.cwd()}/${filePath}`
+  const html = await $.fs.read(path).catch(() => '')
+  return html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() || name
+}
+
+// Opens a URL in the default browser: `open` on macOS, `xdg-open` elsewhere.
+async function openUrl($: EngineInterface, url: string) {
+  const opened = await $.process.run(['open', url], { timeoutMs: 4000 }).catch(() => undefined)
+  if (!opened || opened.exitCode !== 0) await $.process.run(['xdg-open', url], { timeoutMs: 4000 }).catch(() => undefined)
+}
 
 async function refreshRecap($: EngineInterface) {
   if (isRecapRunning) {
@@ -468,6 +488,22 @@ export const register: Register = on => {
       return ran
     }
 
+    if (e.tool === 'Artifact' && (e.action === undefined || e.action === 'publish') && !e.asset) {
+      const { title, file_path: filePath } = e
+      const ran = await next(e)
+      const url = ran.deny === undefined && !ran.isError ? (ran.text ?? JSON.stringify(ran.result)).match(ARTIFACT_URL)?.[0] : undefined
+      if (url) {
+        const name = title || (filePath ? await pageTitle($, filePath) : undefined)
+        const at = await $.clock.now()
+        await update($, artifactsAtom, list => {
+          const prior = list.find(a => a.url === url)
+          const rest = list.filter(a => a.url !== url)
+          return [{ url, title: name || prior?.title || url, at }, ...rest].slice(0, 20)
+        })
+      }
+      return ran
+    }
+
     if (e.tool === 'Bash') {
       const ran = await next(e)
       void refreshGit($)
@@ -535,7 +571,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
-    const [meta, usage, tasks, agents, recap, live, folded, history, git, edits] = await Promise.all([
+    const [meta, usage, tasks, agents, recap, live, folded, history, git, edits, artifacts] = await Promise.all([
       read($, metaAtom),
       read($, usageAtom),
       read($, tasksAtom),
@@ -546,6 +582,7 @@ export const register: Register = on => {
       read($, historyAtom),
       read($, gitAtom),
       read($, editsAtom),
+      read($, artifactsAtom),
     ])
     const W = Math.max(24, e.props.bodyColumns - 4)
     const bodyRows = e.props.scroll?.bodyRows
@@ -896,6 +933,29 @@ export const register: Register = on => {
       </Box>,
     )
 
+    // --- artifacts: pages published this session, newest first ---
+    const artifactsBlock =
+      artifacts.length === 0
+        ? null
+        : section(
+            'artifacts',
+            <Box flexDirection="column">
+              <Head id="artifacts" label="Artifacts" right={`${artifacts.length}`} />
+              {folded.artifacts ? null : (
+                <Box flexDirection="column">
+                  {artifacts.map(artifact => (
+                    <Button key={`a-${artifact.url}`} plain onPress={() => void openUrl($, artifact.url)}>
+                      <Text color={C.artifact}>{'\uf0f6  '}</Text>
+                      <Text color={C.artifactName} wrap="truncate-end">
+                        {artifact.title}
+                      </Text>
+                    </Button>
+                  ))}
+                </Box>
+              )}
+            </Box>,
+          )
+
     // --- footer ---
     const footer = (
       <Box flexDirection="column" key="footer">
@@ -906,29 +966,44 @@ export const register: Register = on => {
           </Text>
         </Box>
         <Box flexDirection="row" justifyContent="flex-end">
-          <Text color={C.muted}>{meta.version.split('-')[0]}</Text>
+          <Text color={C.version}>{meta.version.split('-')[0]}</Text>
         </Box>
       </Box>
+    )
+
+    // Sections in drawing order, a faint rule spanning the pane between each pair.
+    const blocks = [title, context, tasksBlock, agentsBlock, recapBlock, artifactsBlock, gitBlock, filesBlock].filter(
+      block => block !== null,
     )
 
     return (
       <Box
         flexDirection="column"
         backgroundColor={C.bg}
-        paddingX={2}
         paddingTop={1}
         width={e.props.bodyColumns}
         minHeight={bodyRows}
       >
-        {title}
-        {context}
-        {tasksBlock}
-        {agentsBlock}
-        {recapBlock}
-        {gitBlock}
-        {filesBlock}
+        {blocks.flatMap((block, i) => {
+          const padded = (
+            <Box key={`pad-${i}`} flexDirection="column" paddingX={2}>
+              {block}
+            </Box>
+          )
+          return i === 0
+            ? [padded]
+            : [
+                <Text key={`rule-${i}`} color={C.faint}>
+                  {'─'.repeat(e.props.bodyColumns)}
+                </Text>,
+                <Box key={`rule-gap-${i}`} height={1} />,
+                padded,
+              ]
+        })}
         <Box flexGrow={1} />
-        {footer}
+        <Box flexDirection="column" paddingX={2}>
+          {footer}
+        </Box>
       </Box>
     )
   })

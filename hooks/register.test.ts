@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 import type { RenderPropsOf } from 'claude-code'
 
 const PANE = {
@@ -42,4 +42,23 @@ test('a TodoWrite fills the task list and its progress', async ($, on) => {
     await ui.press({ key: 'h-tasks' })
     await ui.unmount()
   }
+})
+
+test('a published artifact is listed and opens in the browser when pressed', async ($, on) => {
+  const URL = 'https://claude.ai/code/artifact/1234abcd-0000-4000-8000-000000000000'
+  on('tool.call', { tool: 'Artifact' }, () => ({ result: { url: URL } }) as never)
+  mock.clock(on)
+  const opened: string[][] = []
+  on('process.run', ($, e) => {
+    opened.push([...e.argv])
+    return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  await $.tool.call({ tool: 'Artifact', file_path: 'report.html', title: 'Weekly Report' } as never)
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ key: 'h-artifacts', text: /Artifacts/ })).toBeDefined()
+  expect(await ui.find({ text: /Weekly Report/ })).toBeDefined()
+  await ui.press({ key: `a-${URL}` })
+  expect(opened.some(argv => argv.includes(URL))).toBe(true)
+  await ui.unmount()
 })

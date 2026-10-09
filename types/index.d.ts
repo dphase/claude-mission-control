@@ -28,6 +28,8 @@ export type FileChange = { path: string; added: number; removed: number; isNew: 
 
 export type FileEdit = { path: string; count: number; at: number }
 
+export type PublishedArtifact = { url: string; title: string; at: number }
+
 export type Limit = { kind: string; percentUsed: number; resetsAt?: string }
 
 export type Usage = {
@@ -91,6 +93,7 @@ declare module 'claude-code' {
       history: number[]
       git: Git
       edits: FileEdit[]
+      artifacts: PublishedArtifact[]
     }
   }
 }
