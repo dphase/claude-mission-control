@@ -272,6 +272,67 @@ async function pageTitle($: EngineInterface, filePath: string) {
   return html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() || name
 }
 
+// Prints the pages this session's transcript shows Claude publishing, oldest first, as JSON. The transcript
+// outgrows $.fs.read's 4 MiB cap, so python streams it.
+const PUBLISHED_IN_TRANSCRIPT = `
+import glob, json, os, re, sys
+from datetime import datetime
+URL = re.compile(r"https://claude\\.ai/(?:code/)?artifact/[\\w-]+")
+root = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+paths = glob.glob(os.path.join(root, "projects", "*", sys.argv[1] + ".jsonl"))
+calls, found = {}, []
+for line in open(paths[0], encoding="utf-8") if paths else []:
+    if '"Artifact"' not in line and "claude.ai/" not in line:
+        continue
+    try:
+        rec = json.loads(line)
+    except ValueError:
+        continue
+    content = (rec.get("message") or {}).get("content")
+    if rec.get("isSidechain") or not isinstance(content, list):
+        continue
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "tool_use" and block.get("name") == "Artifact":
+            args = block.get("input") or {}
+            if args.get("action", "publish") == "publish" and not args.get("asset"):
+                calls[block.get("id")] = args
+        elif block.get("type") == "tool_result" and block.get("tool_use_id") in calls:
+            args = calls.pop(block["tool_use_id"])
+            body = block.get("content")
+            text = body if isinstance(body, str) else " ".join(c.get("text", "") for c in body or [] if isinstance(c, dict))
+            match = None if block.get("is_error") else URL.search(text)
+            if match:
+                stamp = rec.get("timestamp", "").replace("Z", "+00:00")
+                at = int(datetime.fromisoformat(stamp).timestamp() * 1000) if stamp else 0
+                found.append({"url": match.group(0), "title": args.get("title") or "", "filePath": args.get("file_path") or "", "at": at})
+print(json.dumps(found))
+`
+
+// Refills the Artifacts list after a resume or restart, which start it empty.
+async function backfillArtifacts($: EngineInterface) {
+  if ((await read($, artifactsAtom)).length > 0) return
+  const ran = await $.process
+    .run(['python3', '-I', '-c', PUBLISHED_IN_TRANSCRIPT, await $.session.id()], { timeoutMs: 20_000 })
+    .catch(() => undefined)
+  if (!ran || ran.exitCode !== 0) return
+  let found: { url: string; title: string; filePath: string; at: number }[]
+  try {
+    found = JSON.parse(ran.stdout)
+  } catch {
+    return
+  }
+  const newest = new Map<string, (typeof found)[number]>()
+  for (const p of found) newest.set(p.url, { ...p, title: p.title || newest.get(p.url)?.title || '' })
+  const list: PublishedArtifact[] = []
+  for (const p of [...newest.values()].reverse().slice(0, 20)) {
+    const title = p.title || (p.filePath ? await pageTitle($, p.filePath) : undefined) || p.url
+    list.push({ url: p.url, title, at: p.at })
+  }
+  if (list.length > 0) await update($, artifactsAtom, current => (current.length > 0 ? current : list))
+}
+
 // Opens a URL in the default browser: `open` on macOS, `xdg-open` elsewhere.
 async function openUrl($: EngineInterface, url: string) {
   const opened = await $.process.run(['open', url], { timeoutMs: 4000 }).catch(() => undefined)
@@ -360,6 +421,7 @@ export const register: Register = on => {
     await refreshMeta($)
     await refreshUsage($)
     void refreshGit($)
+    void backfillArtifacts($)
     $.clock.every(TICK_MS, () => void tick($))
     if ((await $.store.get('isClosedByPerson')) !== true) void openPane($)
 
@@ -368,6 +430,7 @@ export const register: Register = on => {
 
   on('command.run', { command: 'mc' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
+    await backfillArtifacts($)
     const isOpen = (await $.ui.panes()).some(p => p.id === PANE)
     if (arg === 'recap') {
       void refreshRecap($)

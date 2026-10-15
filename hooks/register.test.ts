@@ -62,3 +62,29 @@ test('a published artifact is listed and opens in the browser when pressed', asy
   expect(opened.some(argv => argv.includes(URL))).toBe(true)
   await ui.unmount()
 })
+
+test('/mc refills the Artifacts list from the transcript after a resume', async ($, on) => {
+  const URL = 'https://claude.ai/artifact/Nz2EpRnUDYovsDy4KLxcjm'
+  const found = [
+    { url: URL, title: 'Translation Review', filePath: '', at: 1 },
+    { url: URL, title: '', filePath: '', at: 2 },
+  ]
+  on('process.run', ($, e) => ({
+    value: {
+      exitCode: 0,
+      stdout: e.argv[0] === 'python3' ? JSON.stringify(found) : '',
+      stderr: '',
+      isStdoutTruncated: false,
+      isStderrTruncated: false,
+    },
+  }))
+  on('session.id', () => ({ value: 'a6f5d499-26e8-4709-b42b-5f29131e5816' }) as never)
+  on('ui.panes', () => ({ value: [] }) as never)
+  on('session.messages', () => ({ value: [] }) as never)
+  await $.command.run({ command: 'mc', args: 'recap' } as never)
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ key: 'h-artifacts', text: /Artifacts/ })).toBeDefined()
+  expect(await ui.find({ text: /Translation Review/ })).toBeDefined()
+  await ui.unmount()
+})
