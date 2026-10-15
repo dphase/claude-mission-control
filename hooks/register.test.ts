@@ -63,6 +63,35 @@ test('a published artifact is listed and opens in the browser when pressed', asy
   await ui.unmount()
 })
 
+test("reading an earlier session's artifact lists it under its page title", async ($, on) => {
+  const URL = 'https://claude.ai/artifact/RHFYAq5GtnrmvugwVdeidU'
+  on('tool.call', { tool: 'Artifact' }, () => ({ result: '[Artifact c4a0]\n<html><title>Concierge Build Plan</title></html>' }) as never)
+  mock.clock(on)
+  await $.tool.call({ tool: 'Artifact', action: 'read', url: URL } as never)
+  await $.tool.call({ tool: 'Artifact', action: 'read', url: URL, path: 'data.json' } as never)
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ text: /Concierge Build Plan/ })).toBeDefined()
+  expect(await ui.find({ key: 'h-artifacts', text: /Artifacts/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a listing names a read artifact whose page had no title', async ($, on) => {
+  const URL = 'https://claude.ai/artifact/YPLumdAyYM4y1AqciQ6j3m'
+  on('tool.call', { tool: 'Artifact' }, ($, e) =>
+    (e as { action?: string }).action === 'list'
+      ? ({ result: `2 published artifacts:\n- (mine) Concierge: features and manual tests — ${URL} — updated 2026-10-09` } as never)
+      : ({ result: '[Artifact fe29] created from an Artifact type; the page is left out' } as never),
+  )
+  mock.clock(on)
+  await $.tool.call({ tool: 'Artifact', action: 'read', url: URL } as never)
+  await $.tool.call({ tool: 'Artifact', action: 'list' } as never)
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ text: /Concierge: features and manual tests/ })).toBeDefined()
+  await ui.unmount()
+})
+
 test('/mc refills the Artifacts list from the transcript after a resume', async ($, on) => {
   const URL = 'https://claude.ai/artifact/Nz2EpRnUDYovsDy4KLxcjm'
   const found = [

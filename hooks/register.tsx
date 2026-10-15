@@ -272,17 +272,19 @@ async function pageTitle($: EngineInterface, filePath: string) {
   return html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() || name
 }
 
-// Prints the pages this session's transcript shows Claude publishing, oldest first, as JSON. The transcript
+// Prints the pages this session's transcript shows Claude publishing, reading or opening, oldest first, as JSON. The transcript
 // outgrows $.fs.read's 4 MiB cap, so python streams it.
 const PUBLISHED_IN_TRANSCRIPT = `
 import glob, json, os, re, sys
 from datetime import datetime
 URL = re.compile(r"https://claude\\.ai/(?:code/)?artifact/[\\w-]+")
+TITLE = re.compile(r"<title[^>]*>([^<]*)</title>", re.I)
+LISTED = re.compile(r"\\) (.+?) — (https://claude\\.ai/(?:code/)?artifact/[\\w-]+)")
 root = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
 paths = glob.glob(os.path.join(root, "projects", "*", sys.argv[1] + ".jsonl"))
-calls, found = {}, []
+calls, found, named = {}, [], {}
 for line in open(paths[0], encoding="utf-8") if paths else []:
-    if '"Artifact"' not in line and "claude.ai/" not in line:
+    if '"Artifact"' not in line and "claude.ai/" not in line and "[Artifact " not in line:
         continue
     try:
         rec = json.loads(line)
@@ -296,17 +298,32 @@ for line in open(paths[0], encoding="utf-8") if paths else []:
             continue
         if block.get("type") == "tool_use" and block.get("name") == "Artifact":
             args = block.get("input") or {}
-            if args.get("action", "publish") == "publish" and not args.get("asset"):
+            action = args.get("action", "publish")
+            if action == "publish" and not args.get("asset"):
+                calls[block.get("id")] = args
+            elif action in ("read", "open") and args.get("url") and not args.get("path") and not args.get("paths"):
+                calls[block.get("id")] = args
+            elif action == "list":
                 calls[block.get("id")] = args
         elif block.get("type") == "tool_result" and block.get("tool_use_id") in calls:
             args = calls.pop(block["tool_use_id"])
             body = block.get("content")
             text = body if isinstance(body, str) else " ".join(c.get("text", "") for c in body or [] if isinstance(c, dict))
-            match = None if block.get("is_error") else URL.search(text)
+            if block.get("is_error"):
+                continue
+            if args.get("action") == "list":
+                named.update((m.group(2), m.group(1)) for m in LISTED.finditer(text))
+                continue
+            visited = args.get("action") in ("read", "open")
+            match = URL.search(args["url"] if visited else text)
             if match:
                 stamp = rec.get("timestamp", "").replace("Z", "+00:00")
                 at = int(datetime.fromisoformat(stamp).timestamp() * 1000) if stamp else 0
-                found.append({"url": match.group(0), "title": args.get("title") or "", "filePath": args.get("file_path") or "", "at": at})
+                tag = TITLE.search(text) if visited else None
+                title = tag.group(1).strip() if tag else args.get("title") or ""
+                found.append({"url": match.group(0), "title": title, "filePath": "" if visited else args.get("file_path") or "", "at": at})
+for p in found:
+    p["title"] = p["title"] or named.get(p["url"], "")
 print(json.dumps(found))
 `
 
@@ -563,6 +580,40 @@ export const register: Register = on => {
           const rest = list.filter(a => a.url !== url)
           return [{ url, title: name || prior?.title || url, at }, ...rest].slice(0, 20)
         })
+      }
+      return ran
+    }
+
+    // Reading or opening an earlier session's page lists it too, named by its <title> when the read returns one.
+    if (e.tool === 'Artifact' && (e.action === 'read' || e.action === 'open') && e.url && !e.path && !e.paths) {
+      const url = e.url.match(ARTIFACT_URL)?.[0]
+      const ran = await next(e)
+      if (url && ran.deny === undefined && !ran.isError) {
+        const name = (ran.text ?? JSON.stringify(ran.result)).match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim()
+        const at = await $.clock.now()
+        await update($, artifactsAtom, list => {
+          const prior = list.find(a => a.url === url)
+          const rest = list.filter(a => a.url !== url)
+          return [{ url, title: name || prior?.title || url, at }, ...rest].slice(0, 20)
+        })
+      }
+      return ran
+    }
+
+    // A listing names pages whose read returned no <title>, such as a Claude Docs doc.
+    if (e.tool === 'Artifact' && e.action === 'list') {
+      const ran = await next(e)
+      if (ran.deny === undefined && !ran.isError) {
+        const text = ran.text ?? JSON.stringify(ran.result)
+        const named = new Map<string, string>()
+        for (const m of text.matchAll(/\) (.+?) — (https:\/\/claude\.ai\/(?:code\/)?artifact\/[\w-]+)/g)) named.set(m[2], m[1])
+        if (named.size > 0) {
+          await update($, artifactsAtom, list =>
+            list.some(a => a.title === a.url && named.has(a.url))
+              ? list.map(a => (a.title === a.url && named.has(a.url) ? { ...a, title: named.get(a.url)! } : a))
+              : list,
+          )
+        }
       }
       return ran
     }

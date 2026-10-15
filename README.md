@@ -29,7 +29,7 @@ To remove it:
 - **Todo**: Claude's task list, with the active task highlighted.
 - **Agents**: running subagents with their type, step count, current tool, and an ETA learned from past runs of the same type.
 - **Recap**: what you asked, what's done, and what's next. Haiku writes it after each turn from the last few messages.
-- **Artifacts**: pages Claude published this session, newest first. Click one to open it in your browser.
+- **Artifacts**: pages Claude published, read or opened this session, newest first. Click one to open it in your browser.
 
 Click a section header to fold it.
 
